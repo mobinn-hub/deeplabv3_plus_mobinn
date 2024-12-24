@@ -27,7 +27,7 @@ def get_argparser():
     parser.add_argument("--data_root", type=str, default='./datasets/data',
                         help="path to Dataset")
     parser.add_argument("--dataset", type=str, default='voc',
-                        choices=['voc', 'cityscapes'], help='Name of dataset')
+                        choices=['voc', 'cityscapes', 'bdd100k'], help='Name of dataset')
     parser.add_argument("--num_classes", type=int, default=None,
                         help="num classes (default: None)")
 
@@ -175,10 +175,8 @@ def get_dataset(opts):
                 et.ExtNormalize(mean=[0.485, 0.456, 0.406],
                                 std=[0.229, 0.224, 0.225]),
             ])
-        train_dst = VOCSegmentation(root=opts.data_root, year=opts.year,
-                                    image_set='train', download=opts.download, transform=train_transform)
-        val_dst = VOCSegmentation(root=opts.data_root, year=opts.year,
-                                  image_set='val', download=False, transform=val_transform)
+        train_dst = BDDSegmentation( image_set='train', transform=train_transform)
+        val_dst = BDDSegmentation( image_set='val', transform=val_transform)
 
     return train_dst, val_dst
 
@@ -359,6 +357,8 @@ def main():
 
             images = images.to(device, dtype=torch.float32)
             labels = labels.to(device, dtype=torch.long)
+            # labels = (labels == 255).float()  # 255를 1로, 0은 그대로 유지
+            # labels = labels.argmax(dim=-1)
 
             optimizer.zero_grad()
             outputs = model(images)

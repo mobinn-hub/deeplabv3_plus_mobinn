@@ -5,6 +5,7 @@ import collections
 import torch.utils.data as data
 import shutil
 import numpy as np
+import cv2
 
 from PIL import Image
 from torchvision.datasets.utils import download_url, check_integrity
@@ -70,69 +71,29 @@ def voc_cmap(N=256, normalized=False):
     return cmap
 
 class BDDSegmentation(data.Dataset):
-    """`Pascal VOC <http://host.robots.ox.ac.uk/pascal/VOC/>`_ Segmentation Dataset.
-    Args:
-        root (string): Root directory of the VOC Dataset.
-        year (string, optional): The dataset year, supports years 2007 to 2012.
-        image_set (string, optional): Select the image_set to use, ``train``, ``trainval`` or ``val``
-        download (bool, optional): If true, downloads the dataset from the internet and
-            puts it in root directory. If dataset is already downloaded, it is not
-            downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-    """
-    cmap = voc_cmap()
+    
+    cmap = voc_cmap(N=1)
+    
     def __init__(self,
-                 root,
-                 year='2012',
                  image_set='train',
-                 download=False,
                  transform=None):
-
-        is_aug=False
-        if year=='2012_aug':
-            is_aug = True
-            year = '2012'
-        
-        self.root = os.path.expanduser(root)
-        self.year = year
-        self.url = DATASET_YEAR_DICT[year]['url']
-        self.filename = DATASET_YEAR_DICT[year]['filename']
-        self.md5 = DATASET_YEAR_DICT[year]['md5']
+        self.is_train = image_set == 'train'
         self.transform = transform
         
-        self.image_set = image_set
-        base_dir = DATASET_YEAR_DICT[year]['base_dir']
-        voc_root = os.path.join(self.root, base_dir)
-        image_dir = os.path.join(voc_root, 'JPEGImages')
-
-        if download:
-            download_extract(self.url, self.root, self.filename, self.md5)
-
-        if not os.path.isdir(voc_root):
-            raise RuntimeError('Dataset not found or corrupted.' +
-                               ' You can use download=True to download it')
+        # 이미지와 마스크 경로를 설정합니다.
+        self.images = self.load_image_paths(image_set)
+        self.masks = self.load_mask_paths(image_set)
         
-        if is_aug and image_set=='train':
-            mask_dir = os.path.join(voc_root, 'SegmentationClassAug')
-            assert os.path.exists(mask_dir), "SegmentationClassAug not found, please refer to README.md and prepare it manually"
-            split_f = os.path.join( self.root, 'train_aug.txt')#'./datasets/data/train_aug.txt'
-        else:
-            mask_dir = os.path.join(voc_root, 'SegmentationClass')
-            splits_dir = os.path.join(voc_root, 'ImageSets/Segmentation')
-            split_f = os.path.join(splits_dir, image_set.rstrip('\n') + '.txt')
 
-        if not os.path.exists(split_f):
-            raise ValueError(
-                'Wrong image_set entered! Please use image_set="train" '
-                'or image_set="trainval" or image_set="val"')
+    def load_image_paths(self, image_set):
+        # 이미지 경로를 로드하는 로직을 구현합니다.
+        image_dir = f'/home/mobinn/HybridNets/datasets/bdd100k/{image_set}'
+        return [os.path.join(image_dir, img) for img in os.listdir(image_dir) if img.endswith('.jpg')]
 
-        with open(os.path.join(split_f), "r") as f:
-            file_names = [x.strip() for x in f.readlines()]
-        
-        self.images = [os.path.join(image_dir, x + ".jpg") for x in file_names]
-        self.masks = [os.path.join(mask_dir, x + ".png") for x in file_names]
-        assert (len(self.images) == len(self.masks))
+    def load_mask_paths(self, image_set):
+        # 마스크 경로를 로드하는 로직을 구현합니다.
+        mask_dir = f'/home/mobinn/HybridNets/datasets/bdd_lane_gt/{image_set}'
+        return [os.path.join(mask_dir, mask) for mask in os.listdir(mask_dir) if mask.endswith('.png')]
 
     def __getitem__(self, index):
         """
@@ -142,12 +103,23 @@ class BDDSegmentation(data.Dataset):
             tuple: (image, target) where target is the image segmentation.
         """
         img = Image.open(self.images[index]).convert('RGB')
+        img_array = np.array(img)
         target = Image.open(self.masks[index])
+        target_array = np.array(target)
+        print(img_array.shape)
+        print(target_array.shape)
+
+        _, target = cv2.threshold(target_array, 0, 255, cv2.THRESH_BINARY)
+
+        target = (target / 255).astype(np.float32)
+
+        print(target)
+        
         if self.transform is not None:
             img, target = self.transform(img, target)
 
-        return img, target
 
+        return img, target
 
     def __len__(self):
         return len(self.images)
